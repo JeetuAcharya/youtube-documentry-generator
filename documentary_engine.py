@@ -260,7 +260,16 @@ async def build_documentary():
 
     output_path = os.path.join(BASE_DIR, "final_documentary.mp4")
     
-    final_video.write_videofile(output_path, fps=24, codec="libx264", audio_codec="aac")
+    # Heavily optimized for GitHub Actions (2-core cloud servers)
+    # ultrafast preset reduces render time by ~3x to 5x.
+    final_video.write_videofile(
+        output_path, 
+        fps=24, 
+        codec="libx264", 
+        audio_codec="aac", 
+        preset="ultrafast", 
+        threads=4
+    )
     print(f"SUCCESS! Documentary saved to {output_path}")
 
     # 5. UPLOAD PHASE
