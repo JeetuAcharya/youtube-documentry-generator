@@ -1,0 +1,17 @@
+# Virtual environments
+venv/
+env/
+.env
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Project specific
+Assets/
+final_documentary.mp4
+scratch/
+
+# Secrets (CRITICAL: Do not push these!)
+client_secrets.json
+credentials.json
