@@ -94,37 +94,34 @@ async def generate_tts(text, filename, voice="en-US-ChristopherNeural"):
         return filepath
 
 def get_trending_topics():
-    print("Fetching today's trending topics from Wikipedia...")
-    # Get yesterday's date to ensure data is fully populated
-    yesterday = datetime.datetime.now() - datetime.timedelta(days=1)
-    date_str = yesterday.strftime("%Y/%m/%d")
-    url = f"https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia.org/all-access/{date_str}"
+    print("Fetching today's trending topics from Google Trends...")
+    url = "https://trends.google.com/trends/trendingsearches/daily/rss?geo=US"
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-        data = response.json()
-        articles = data.get("items", [])[0].get("articles", [])
-        
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(response.content)
         topics = []
-        # Filter out Wikipedia meta pages
-        exclude = ["Main_Page", "Special:Search", "Wikipedia:", "File:"]
-        for item in articles:
-            title = item.get("article", "")
-            if title and not any(title.startswith(x) for x in exclude):
-                clean_title = title.replace("_", " ")
-                topics.append(clean_title)
+        for item in root.findall('.//item'):
+            title = item.find('title')
+            if title is not None and title.text:
+                topics.append(title.text)
                 if len(topics) >= 5:
                     break
                     
-        print(f"Found trending topics: {', '.join(topics)}")
-        return topics if topics else ["Artificial Intelligence", "Space Exploration"]
+        if topics:
+            print(f"Found Google trending topics: {', '.join(topics)}")
+            return topics
+        else:
+            raise Exception("No topics found in RSS feed")
     except Exception as e:
-        print(f"Error fetching trends: {e}")
-        return ["Artificial Intelligence", "Lost Civilizations", "Space Exploration", "Unsolved Mysteries"]
+        print(f"Error fetching Google Trends: {e}")
+        print("Fallback: Letting AI invent a random topic...")
+        return []
 
 def generate_script(topic):
-    print(f"Generating unique documentary script incorporating trend: {topic}...")
+    print(f"Generating unique documentary script...")
     url = "https://integrate.api.nvidia.com/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {NVIDIA_NIM_API_KEY}",
@@ -132,12 +129,20 @@ def generate_script(topic):
         "Accept": "application/json"
     }
     
+    import random
+    genre = random.choice(["Horror", "Lost History", "Mythology", "Space & Universe", "Unsolved Mystery"])
+
+    if topic:
+        topic_instruction = f"Your task is to write a highly engaging, 15-minute documentary script based on this trending topic: {topic}."
+    else:
+        topic_instruction = "Your task is to write a highly engaging, 15-minute documentary script about a completely unique, fascinating, and obscure topic of your own choosing."
+
     prompt = (
         "You are a professional documentary scriptwriter. "
-        "Invent a completely unique, highly obscure, never-before-heard topic for a documentary. "
-        "The genre must be one of: Horror, Lost History, or Mythology. "
-        f"CRITICAL VIRALITY RULE: To make it relevant today, you MUST subtly tie the historical/mythological topic to this currently trending topic: {topic}. "
-        "Write a script that will translate to a 15-minute video. This requires a very long script, around 20 to 30 scenes. "
+        f"{topic_instruction} "
+        f"CRITICAL RULE: You MUST write this documentary strictly in the genre of: {genre}. "
+        "Do NOT mix genres together! If the genre is Horror, make the entire script pure horror. If it's Space & Universe, focus strictly on space and science. If it's Mythology, stick to mythology. Keep the tone completely consistent and separated. "
+        "Write a very long script, around 20 to 30 scenes. "
         "Output ONLY a valid JSON object with EXACTLY three keys:\n"
         "1. 'tags': An array of 20 highly optimized SEO tags for YouTube search (e.g. ['documentary', 'unsolved mystery', 'history']).\n"
         "2. 'description': A detailed, highly engaging 2-to-3 paragraph English YouTube description for this documentary.\n"
@@ -181,8 +186,12 @@ def generate_script(topic):
 
 async def build_documentary():
     topics = get_trending_topics()
-    main_topic = topics[0] if topics else "UNSOLVED MYSTERIES"
+    main_topic = topics[0] if topics else ""
     scenes, long_description, tags = generate_script(main_topic)
+    
+    if not main_topic:
+        # If the AI invented a topic, just use the first tag as the title fallback
+        main_topic = tags[0].title() if tags else "Unsolved Mystery"
     if not scenes: return
     
     video_clips = []
@@ -206,6 +215,8 @@ async def build_documentary():
         # 2. Generate Audio
         aud_path = await generate_tts(scene["text"], f"audio_{i}.mp3")
         aud_clip = AudioFileClip(aud_path)
+        # Increase TTS volume slightly by 30% to make the voice punchier
+        aud_clip = aud_clip.fx(afx.volumex, 1.3)
         scene_duration = aud_clip.duration
         
         # 3. Process Clips (Slice them dynamically)
