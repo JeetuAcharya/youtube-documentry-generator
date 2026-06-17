@@ -4,6 +4,12 @@ import json
 import asyncio
 import datetime
 import edge_tts
+
+# Fix for MoviePy compatibility with Pillow >= 10.0.0
+import PIL.Image
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.Resampling.LANCZOS
+
 from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips, CompositeAudioClip, CompositeVideoClip, ImageClip
 import moviepy.video.fx.all as vfx
 import moviepy.audio.fx.all as afx
