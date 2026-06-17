@@ -111,6 +111,37 @@ def upload_to_youtube(video_path, title, description, tags=None, privacy_status=
     print(f"Successfully uploaded to YouTube! Video ID: {video_id}")
     return video_id
 
+def pin_comment(video_id, text):
+    """Posts a top-level comment on the video to kickstart algorithm engagement."""
+    try:
+        youtube = get_authenticated_service()
+    except Exception as e:
+        print(f"Error authenticating for comment: {e}")
+        return False
+        
+    print(f"Posting top-level comment to video {video_id}...")
+    try:
+        request = youtube.commentThreads().insert(
+            part="snippet",
+            body={
+                "snippet": {
+                    "videoId": video_id,
+                    "topLevelComment": {
+                        "snippet": {
+                            "textOriginal": text
+                        }
+                    }
+                }
+            }
+        )
+        response = request.execute()
+        print("Successfully posted comment!")
+        return True
+    except Exception as e:
+        print(f"Failed to post comment: {e}")
+        return False
+
+
 def upload_to_facebook_video(video_file, title, description):
     """
     Uploads an MP4 file directly to a Facebook Page as a standard Video (not a Reel).

@@ -132,10 +132,11 @@ def generate_script(topic):
         "The genre must be one of: Horror, Lost History, or Mythology. "
         f"CRITICAL VIRALITY RULE: To make it relevant today, you MUST subtly tie the historical/mythological topic to this currently trending topic: {topic}. "
         "Write a script that will translate to a 15-minute video. This requires a very long script, around 20 to 30 scenes. "
-        "Output ONLY a valid JSON object with EXACTLY two keys:\n"
-        "1. 'description': A detailed, highly engaging 2-to-3 paragraph English YouTube description for this documentary.\n"
-        "2. 'scenes': An array of scene objects. Each object must have exactly two keys:\n"
-        "   - 'query' (a short 1-3 word English search term for Pexels video search representing the visual, e.g. 'dark forest')\n"
+        "Output ONLY a valid JSON object with EXACTLY three keys:\n"
+        "1. 'tags': An array of 20 highly optimized SEO tags for YouTube search (e.g. ['documentary', 'unsolved mystery', 'history']).\n"
+        "2. 'description': A detailed, highly engaging 2-to-3 paragraph English YouTube description for this documentary.\n"
+        "3. 'scenes': An array of scene objects. Each object must have exactly two keys:\n"
+        "   - 'queries' (an array of 3 distinct 1-3 word English search terms for Pexels video search representing different camera angles/visuals for the scene, e.g. ['dark forest', 'full moon', 'creepy shadows'])\n"
         "   - 'text' (the dramatic English voiceover script for that scene, roughly 3-5 sentences)\n"
         "Do not include any other text, markdown formatting, or explanations outside the JSON object."
     )
@@ -162,16 +163,17 @@ def generate_script(topic):
         data = json.loads(content.strip())
         scenes = data.get("scenes", [])
         desc = data.get("description", f"What is the real secret behind {topic}? Watch to find out.")
-        print(f"Successfully generated script with {len(scenes)} scenes!")
-        return scenes, desc
+        tags = data.get("tags", ["documentary", "mystery", "history"])
+        print(f"Successfully generated script with {len(scenes)} scenes and {len(tags)} tags!")
+        return scenes, desc, tags
     except Exception as e:
         print(f"Error generating script: {e}")
-        return [{"query": "dark ocean", "text": "The script generation failed, but the depths remain dark."}], "Failed to generate description."
+        return [{"queries": ["dark ocean", "deep sea", "storm"], "text": "The script generation failed, but the depths remain dark."}], "Failed to generate description.", ["error", "documentary"]
 
 async def build_documentary():
     topics = get_trending_topics()
     main_topic = topics[0] if topics else "UNSOLVED MYSTERIES"
-    scenes, long_description = generate_script(main_topic)
+    scenes, long_description, tags = generate_script(main_topic)
     if not scenes: return
     
     video_clips = []
@@ -179,66 +181,76 @@ async def build_documentary():
     for i, scene in enumerate(scenes):
         print(f"\n--- Processing Scene {i+1} ---")
         
-        # 1. Download Video
-        video_url = search_pexels_video(scene["query"])
-        if not video_url:
-            print("Aborting. No video found or API key missing.")
-            return
+        # 1. Download Videos (Multiple clips per scene for high-retention rapid editing)
+        vid_paths = []
+        queries = scene.get("queries", ["dark forest"])
+        for j, query in enumerate(queries):
+            video_url = search_pexels_video(query)
+            if video_url:
+                v_path = download_video(video_url, f"scene_{i}_clip_{j}.mp4")
+                if v_path: vid_paths.append(v_path)
+                
+        if not vid_paths:
+            print(f"Warning: No videos found for scene {i+1}, skipping scene.")
+            continue
             
-        vid_path = download_video(video_url, f"scene_{i}.mp4")
-        
         # 2. Generate Audio
         aud_path = await generate_tts(scene["text"], f"audio_{i}.mp3")
-        
-        # 3. Process Clip
-        vid_clip = VideoFileClip(vid_path)
         aud_clip = AudioFileClip(aud_path)
+        scene_duration = aud_clip.duration
         
-        # Professional Editing: Resize and Center Crop to 1920x1080
-        clip_ratio = vid_clip.w / vid_clip.h
-        target_ratio = 1920 / 1080
+        # 3. Process Clips (Slice them dynamically)
+        subclips = []
+        clip_duration = scene_duration / len(vid_paths)
         
-        if clip_ratio > target_ratio:
-            vid_clip = vid_clip.fx(vfx.resize, height=1080)
-        else:
-            vid_clip = vid_clip.fx(vfx.resize, width=1920)
+        for j, v_path in enumerate(vid_paths):
+            vc = VideoFileClip(v_path)
             
-        vid_clip = vid_clip.fx(vfx.crop, x_center=vid_clip.w/2, y_center=vid_clip.h/2, width=1920, height=1080)
-        
-        # Loop or Trim video to match audio length
-        if vid_clip.duration < aud_clip.duration:
-            vid_clip = vid_clip.fx(vfx.loop, duration=aud_clip.duration)
-        else:
-            vid_clip = vid_clip.subclip(0, aud_clip.duration)
+            # Professional Editing: Resize and Center Crop to 1920x1080
+            clip_ratio = vc.w / vc.h
+            target_ratio = 1920 / 1080
             
-        # Add cinematic dip-to-black transitions
-        vid_clip = vid_clip.fx(vfx.fadein, 0.5).fx(vfx.fadeout, 0.5)
+            if clip_ratio > target_ratio: vc = vc.fx(vfx.resize, height=1080)
+            else: vc = vc.fx(vfx.resize, width=1920)
+                
+            vc = vc.fx(vfx.crop, x_center=vc.w/2, y_center=vc.h/2, width=1920, height=1080)
+            
+            # Loop or Trim
+            if vc.duration < clip_duration:
+                vc = vc.fx(vfx.loop, duration=clip_duration)
+            else:
+                vc = vc.subclip(0, clip_duration)
+                
+            # Add subtle crossfades between rapid-b-roll clips
+            if j > 0: vc = vc.fx(vfx.fadein, 0.3)
+            if j < len(vid_paths) - 1: vc = vc.fx(vfx.fadeout, 0.3)
+                
+            vc = vc.fx(vfx.colorx, 0.85).fx(vfx.lum_contrast, lum=0, contrast=0.2)
+            subclips.append(vc)
+            
+        # Stitch subclips for this scene
+        scene_vid_clip = concatenate_videoclips(subclips, method="compose")
         
-        # Cinematic Color Grading (Netflix / NatGeo style)
-        # Darken by 15% and increase contrast
-        vid_clip = vid_clip.fx(vfx.colorx, 0.85)
-        vid_clip = vid_clip.fx(vfx.lum_contrast, lum=0, contrast=0.2)
+        if scene_vid_clip.duration > aud_clip.duration:
+            scene_vid_clip = scene_vid_clip.subclip(0, aud_clip.duration)
+            
+        # Dip to black at the ends of the whole scene
+        scene_vid_clip = scene_vid_clip.fx(vfx.fadein, 0.5).fx(vfx.fadeout, 0.5)
         
         # Dynamically Generate HUD Overlay
-        if i == 0:
-            hud_array = hud_generator.generate_intro_hud(main_topic)
-        elif i == len(scenes) - 1:
-            hud_array = hud_generator.generate_outro_hud(main_topic)
+        if i == 0: hud_array = hud_generator.generate_intro_hud(main_topic)
+        elif i == len(scenes) - 1: hud_array = hud_generator.generate_outro_hud(main_topic)
         else:
-            # Rotate between different HUD styles to keep the video dynamic and engaging
-            if i % 4 == 0:
-                hud_array = hud_generator.generate_focus_hud(main_topic)
-            elif i % 3 == 0:
-                hud_array = hud_generator.generate_highlight_hud(main_topic)
-            else:
-                hud_array = hud_generator.generate_main_hud(main_topic, i, len(scenes))
+            if i % 4 == 0: hud_array = hud_generator.generate_focus_hud(main_topic)
+            elif i % 3 == 0: hud_array = hud_generator.generate_highlight_hud(main_topic)
+            else: hud_array = hud_generator.generate_main_hud(main_topic, i, len(scenes))
             
         print("Overlaying dynamic python HUD...")
-        hud_clip = ImageClip(hud_array).set_duration(vid_clip.duration).resize(vid_clip.size)
-        vid_clip = CompositeVideoClip([vid_clip, hud_clip])
+        hud_clip = ImageClip(hud_array).set_duration(scene_vid_clip.duration).resize(scene_vid_clip.size)
+        scene_vid_clip = CompositeVideoClip([scene_vid_clip, hud_clip])
         
-        vid_clip = vid_clip.set_audio(aud_clip)
-        video_clips.append(vid_clip)
+        scene_vid_clip = scene_vid_clip.set_audio(aud_clip)
+        video_clips.append(scene_vid_clip)
         
     print("\nStitching final documentary...")
     final_video = concatenate_videoclips(video_clips, method="compose")
@@ -283,7 +295,10 @@ async def build_documentary():
     final_description = f"{long_description}\n\n#{clean_topic} #documentary #mystery #history"
     
     print("\n--- Starting Upload Phase ---")
-    uploader.upload_to_youtube(output_path, title, final_description, privacy_status="public")
+    video_id = uploader.upload_to_youtube(output_path, title, final_description, tags=tags, privacy_status="public")
+    if video_id:
+        uploader.pin_comment(video_id, "What do you think is the real truth behind this mystery? Let me know below! 👇")
+        
     uploader.upload_to_facebook_video(output_path, title, final_description)
     
     # 6. CLEANUP PHASE
