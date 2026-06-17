@@ -73,18 +73,19 @@ def download_video(url, filename):
                 time.sleep(10)
     return filepath
 
-async def generate_tts(text, filename):
+async def generate_tts(text, filename, voice="en-US-ChristopherNeural"):
     filepath = os.path.join(AUDIO_DIR, filename)
-    print(f"Generating Voiceover: {text[:30]}...")
-    voices = ["en-US-ChristopherNeural", "en-GB-RyanNeural", "en-US-EricNeural"]
-    for voice in voices:
-        try:
-            communicate = edge_tts.Communicate(text, voice)
-            await communicate.save(filepath)
-            return filepath
-        except Exception as e:
-            print(f"TTS failed with voice {voice}: {e}. Trying fallback voice...")
-    return filepath
+    print(f"Generating Voiceover [{voice}]: {text[:30]}...")
+    try:
+        communicate = edge_tts.Communicate(text, voice)
+        await communicate.save(filepath)
+        return filepath
+    except Exception as e:
+        print(f"TTS failed with voice {voice}: {e}. Trying fallback...")
+        fallback = "en-GB-RyanNeural"
+        communicate = edge_tts.Communicate(text, fallback)
+        await communicate.save(filepath)
+        return filepath
 
 def get_trending_topics():
     print("Fetching today's trending topics from Wikipedia...")
@@ -130,12 +131,13 @@ def generate_script(topic):
         "Invent a completely unique, highly obscure, never-before-heard topic for a documentary. "
         "The genre must be one of: Horror, Lost History, or Mythology. "
         f"CRITICAL VIRALITY RULE: To make it relevant today, you MUST subtly tie the historical/mythological topic to this currently trending topic: {topic}. "
-        "Do not ask the user, just pick a fascinating and highly specific topic automatically. "
         "Write a script that will translate to a 15-minute video. This requires a very long script, around 20 to 30 scenes. "
-        "Output ONLY a valid JSON array of objects. Each object must have exactly two keys: "
-        "'query' (a short 1-3 word search term for Pexels video search representing the visual, e.g. 'dark forest') and "
-        "'text' (the dramatic voiceover script for that scene, roughly 3-5 sentences). "
-        "Do not include any other text, markdown formatting, or explanations outside the JSON array."
+        "Output ONLY a valid JSON object with EXACTLY two keys:\n"
+        "1. 'description': A detailed, highly engaging 2-to-3 paragraph English YouTube description for this documentary.\n"
+        "2. 'scenes': An array of scene objects. Each object must have exactly two keys:\n"
+        "   - 'query' (a short 1-3 word English search term for Pexels video search representing the visual, e.g. 'dark forest')\n"
+        "   - 'text' (the dramatic English voiceover script for that scene, roughly 3-5 sentences)\n"
+        "Do not include any other text, markdown formatting, or explanations outside the JSON object."
     )
     
     payload = {
@@ -157,19 +159,19 @@ def generate_script(topic):
         elif content.startswith("```"): content = content[3:]
         if content.endswith("```"): content = content[:-3]
         
-        scenes = json.loads(content.strip())
+        data = json.loads(content.strip())
+        scenes = data.get("scenes", [])
+        desc = data.get("description", f"What is the real secret behind {topic}? Watch to find out.")
         print(f"Successfully generated script with {len(scenes)} scenes!")
-        return scenes
+        return scenes, desc
     except Exception as e:
         print(f"Error generating script: {e}")
-        return [
-            {"query": "dark ocean", "text": "The script generation failed, but the depths remain dark."}
-        ]
+        return [{"query": "dark ocean", "text": "The script generation failed, but the depths remain dark."}], "Failed to generate description."
 
 async def build_documentary():
     topics = get_trending_topics()
     main_topic = topics[0] if topics else "UNSOLVED MYSTERIES"
-    scenes = generate_script(main_topic)
+    scenes, long_description = generate_script(main_topic)
     if not scenes: return
     
     video_clips = []
@@ -278,11 +280,11 @@ async def build_documentary():
     # Generate catchy, small, high-retention title and description with 4 hashtags
     clean_topic = main_topic.replace(" ", "")
     title = f"The Terrifying Truth of {main_topic.title()} 🚨"
-    description = f"What is the real secret behind {main_topic.title()}? Watch to find out.\n\n#{clean_topic} #documentary #mystery #history"
+    final_description = f"{long_description}\n\n#{clean_topic} #documentary #mystery #history"
     
     print("\n--- Starting Upload Phase ---")
-    uploader.upload_to_youtube(output_path, title, description, privacy_status="public")
-    uploader.upload_to_facebook_video(output_path, title, description)
+    uploader.upload_to_youtube(output_path, title, final_description, privacy_status="public")
+    uploader.upload_to_facebook_video(output_path, title, final_description)
     
     # 6. CLEANUP PHASE
     print("\n--- Starting Cleanup Phase ---")
