@@ -35,9 +35,12 @@ jobs:
           pip install requests edge-tts moviepy==1.0.3 Pillow numpy google-api-python-client google-auth-httplib2 google-auth-oauthlib
           
       - name: Reconstruct YouTube Credentials
+        env:
+          YOUTUBE_CLIENT_SECRETS: ${{ secrets.YOUTUBE_CLIENT_SECRETS }}
+          YOUTUBE_CREDENTIALS: ${{ secrets.YOUTUBE_CREDENTIALS }}
         run: |
-          echo "${{ secrets.YOUTUBE_CLIENT_SECRETS }}" > client_secrets.json
-          echo "${{ secrets.YOUTUBE_CREDENTIALS }}" > credentials.json
+          printf "%s\n" "$YOUTUBE_CLIENT_SECRETS" > client_secrets.json
+          printf "%s\n" "$YOUTUBE_CREDENTIALS" > credentials.json
           
       - name: Run Documentary Engine (Render & Upload)
         env:

@@ -169,6 +169,9 @@ def generate_script(topic):
         data = json.loads(content.strip())
         scenes = data.get("scenes", [])
         desc = data.get("description", f"What is the real secret behind {topic}? Watch to find out.")
+        if isinstance(desc, list):
+            desc = "\n\n".join(desc)
+            
         tags = data.get("tags", ["documentary", "mystery", "history"])
         print(f"Successfully generated script with {len(scenes)} scenes and {len(tags)} tags!")
         return scenes, desc, tags
