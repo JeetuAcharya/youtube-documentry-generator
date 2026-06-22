@@ -1,0 +1,53 @@
+Nvidia nim 
+
+Chatterbox multilingual- tts
+API:- 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
+
+pip install -U nvidia-riva-client
+git clone https://github.com/nvidia-riva/python-clients.git
+python python-clients/scripts/tts/talk.py \
+    --server grpc.nvcf.nvidia.com:443 --use-ssl \
+    --metadata function-id "ddacc747-1269-4fab-bfd9-8f593dead106"  \
+    --metadata authorization "Bearer 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" \
+    --language-code en-US \
+    --text "this audio is generated from nvidia's text to speech model" \
+    --voice "Chatterbox-Multilingual.en-US.Male" \
+    --output audio.wav
+python python-clients/scripts/tts/talk.py \
+    --server grpc.nvcf.nvidia.com:443 --use-ssl \
+    --metadata function-id "ddacc747-1269-4fab-bfd9-8f593dead106"  \
+    --metadata authorization "Bearer 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" \
+    --list-voices
+
+
+
+Magpie-tts-multilingual
+
+API KEY:- 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
+
+curl -s https://877104f7-e885-42b9-8de8-f6e4c6303969.invocation.api.nvcf.nvidia.com/v1/audio/list_voices \
+     -H "Authorization: Bearer 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"
+curl -s -X POST https://877104f7-e885-42b9-8de8-f6e4c6303969.invocation.api.nvcf.nvidia.com/v1/audio/synthesize \
+     -H "Authorization: Bearer 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" \
+     -F "text=this audio is generated from nvidias text to speech model" \
+     -F "language=en-US" \
+     -F "voice=Magpie-Multilingual.EN-US.Aria" \
+     -F "encoding=LINEAR_PCM" \
+     -F "sample_rate_hz=44100" \
+     --output audio.wav
+pip install -U nvidia-riva-client
+git clone https://github.com/nvidia-riva/python-clients.git
+python python-clients/scripts/tts/talk.py \
+    --server grpc.nvcf.nvidia.com:443 --use-ssl \
+    --metadata function-id "877104f7-e885-42b9-8de8-f6e4c6303969"  \
+    --metadata authorization "Bearer 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" \
+    --language-code en-US \
+    --text "this audio is generated from nvidia's text to speech model" \
+    --voice "Magpie-Multilingual.EN-US.Aria" \
+    --output audio.wav
+python python-clients/scripts/tts/talk.py \
+    --server grpc.nvcf.nvidia.com:443 --use-ssl \
+    --metadata function-id "877104f7-e885-42b9-8de8-f6e4c6303969"  \
+    --metadata authorization "Bearer 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" \
+    --list-voices
+

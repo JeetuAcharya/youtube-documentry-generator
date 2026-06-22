@@ -3,7 +3,8 @@ import requests
 import json
 import asyncio
 import datetime
-import edge_tts
+import random
+import subprocess
 
 # Fix for MoviePy compatibility with Pillow >= 10.0.0
 import PIL.Image
@@ -26,29 +27,28 @@ os.makedirs(HUD_DIR, exist_ok=True)
 import hud_generator
 
 # API Keys (Loaded securely from environment variables)
-PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "YOUR_PEXELS_KEY")
-NVIDIA_NIM_API_KEY = os.environ.get("NVIDIA_NIM_API_KEY", "YOUR_NVIDIA_KEY")
+PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "quyE0ssaQW36uzc22XfO2VOGy7FS0vMctYY4mnb5tA90QixZrOkLo6G9")
+NVIDIA_NIM_API_KEY = os.environ.get("NVIDIA_NIM_API_KEY", "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")
 
 def search_pexels_video(query):
-    if PEXELS_API_KEY == "YOUR_API_KEY_HERE":
-        print("ERROR: Please put your Pexels API key in documentary_engine.py!")
+    if PEXELS_API_KEY == "YOUR_PEXELS_KEY":
+        print("ERROR: Please put your Pexels API key in documentary_engine.py or set the environment variable!")
         return None
         
     print(f"Searching Pexels for: {query}...")
     url = "https://api.pexels.com/videos/search"
     headers = {
         "Authorization": PEXELS_API_KEY,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        "User-Agent": "Mozilla/5.0"
     }
     params = {"query": query, "per_page": 1, "orientation": "landscape"}
     
     try:
-        response = requests.get(url, headers=headers, params=params)
+        response = requests.get(url, headers=headers, params=params, timeout=20)
         response.raise_for_status()
         data = response.json()
         if data.get("videos"):
             video_files = data["videos"][0].get("video_files", [])
-            # Get HD video (1920x1080) if possible
             hd_video = next((f for f in video_files if f.get("quality") == "hd" and f.get("width", 0) >= 1920), video_files[0] if video_files else None)
             if hd_video:
                 return hd_video.get("link")
@@ -59,9 +59,7 @@ def search_pexels_video(query):
 def download_video(url, filename):
     import time
     filepath = os.path.join(VIDEOS_DIR, filename)
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
     for attempt in range(3):
         print(f"Downloading video to {filepath} (Attempt {attempt+1}/3)...")
         try:
@@ -75,27 +73,78 @@ def download_video(url, filename):
         except Exception as e:
             print(f"Error downloading video: {e}")
             if attempt < 2:
-                print("Waiting 10 seconds before trying again...")
                 time.sleep(10)
     return filepath
 
-async def generate_tts(text, filename, voice="en-US-ChristopherNeural"):
+NVIDIA_NIM_MAGPIE_API_KEY = "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"
+NVIDIA_NIM_CHATTERBOX_API_KEY = "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"
+
+async def generate_tts(text, filename):
     filepath = os.path.join(AUDIO_DIR, filename)
-    print(f"Generating Voiceover [{voice}]: {text[:30]}...")
-    try:
-        communicate = edge_tts.Communicate(text, voice)
-        await communicate.save(filepath)
-        return filepath
-    except Exception as e:
-        print(f"TTS failed with voice {voice}: {e}. Trying fallback...")
-        fallback = "en-GB-RyanNeural"
-        communicate = edge_tts.Communicate(text, fallback)
-        await communicate.save(filepath)
-        return filepath
+    print("Generating Voiceover via Edge-TTS...")
+    
+    import edge_tts
+    for attempt in range(3):
+        try:
+            # We slow it down slightly and drop the pitch for a dramatic documentary tone
+            communicate = edge_tts.Communicate(
+                text, 
+                "en-US-ChristopherNeural", 
+                rate="-5%",
+                pitch="-5Hz"
+            )
+            raw_filepath = filepath.replace(".mp3", "_raw.mp3")
+            timing_filepath = filepath.replace(".mp3", "_timing.json")
+            
+            word_boundaries = []
+            with open(raw_filepath, "wb") as f:
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        f.write(chunk["data"])
+                    elif chunk["type"] == "WordBoundary":
+                        # offset and duration are in 100-nanosecond units, convert to seconds
+                        word_boundaries.append({
+                            "start": chunk["offset"] / 10_000_000,
+                            "end": (chunk["offset"] + chunk["duration"]) / 10_000_000,
+                            "text": chunk["text"]
+                        })
+                        
+            with open(timing_filepath, "w", encoding="utf-8") as f:
+                json.dump(word_boundaries, f, ensure_ascii=False)
+            
+            if os.path.exists(raw_filepath) and os.path.getsize(raw_filepath) > 0:
+                print("Applying cinematic audio filters (Bass Boost, Reverb, Compression)...")
+                # Transform the flat AI voice into a 'Voice of God' studio recording using FFmpeg
+                # 1. Bass boost (+7dB at 100Hz) for deep radio resonance
+                # 2. Treble boost (+3dB at 6000Hz) for crisp articulation
+                # 3. Echo (subtle 20ms delay) for studio room acoustics
+                # 4. Compressor to level out the volume perfectly
+                ffmpeg_cmd = [
+                    "ffmpeg", "-y", "-i", raw_filepath,
+                    "-af", "bass=g=7:f=100,treble=g=3:f=6000,aecho=0.8:0.8:20:0.2,acompressor=ratio=4",
+                    filepath
+                ]
+                subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+                # Clean up the raw file
+                try:
+                    os.remove(raw_filepath)
+                except:
+                    pass
+                
+                return filepath
+            else:
+                print(f"Edge-TTS returned empty file on attempt {attempt+1}")
+        except Exception as e:
+            print(f"Edge-TTS failed on attempt {attempt+1}: {e}")
+            
+        await asyncio.sleep(2)
+        
+    return None
 
 def get_trending_topics():
     print("Fetching today's trending topics from Google Trends...")
-    url = "https://trends.google.com/trends/trendingsearches/daily/rss?geo=US"
+    url = "https://trends.google.com/trending/rss?geo=IN"
     headers = {"User-Agent": "Mozilla/5.0"}
     try:
         response = requests.get(url, headers=headers, timeout=10)
@@ -121,34 +170,36 @@ def get_trending_topics():
         return []
 
 def generate_script(topic):
-    print(f"Generating unique documentary script...")
+    print(f"Generating unique documentary script via Nvidia NIM API (meta/llama-3.1-8b-instruct)...")
     url = "https://integrate.api.nvidia.com/v1/chat/completions"
+    nim_key = os.environ.get("NVIDIA_NIM_API_KEY", "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")
+    if not nim_key:
+        print("Warning: NVIDIA_NIM_API_KEY not found in environment. Attempting to proceed, but API call may fail.")
+        
     headers = {
-        "Authorization": f"Bearer {NVIDIA_NIM_API_KEY}",
         "Content-Type": "application/json",
+        "Authorization": f"Bearer {nim_key}",
         "Accept": "application/json"
     }
     
-    import random
-    genre = random.choice(["Horror", "Lost History", "Mythology", "Space & Universe", "Unsolved Mystery"])
+    genre = random.choice(["Horror", "Lost History", "Universe", "Science", "Finance"])
 
-    if topic:
-        topic_instruction = f"Your task is to write a highly engaging, 15-minute documentary script based on this trending topic: {topic}."
-    else:
-        topic_instruction = "Your task is to write a highly engaging, 15-minute documentary script about a completely unique, fascinating, and obscure topic of your own choosing."
+    topic_instruction = f"Your task is to write a highly engaging, 15-minute documentary script about a completely unique, fascinating, and obscure topic of your own choosing within the {genre} genre."
 
     prompt = (
         "You are a professional documentary scriptwriter. "
         f"{topic_instruction} "
         f"CRITICAL RULE: You MUST write this documentary strictly in the genre of: {genre}. "
-        "Do NOT mix genres together! If the genre is Horror, make the entire script pure horror. If it's Space & Universe, focus strictly on space and science. If it's Mythology, stick to mythology. Keep the tone completely consistent and separated. "
-        "Write a very long script, around 20 to 30 scenes. "
+        "Do NOT mix genres together! Keep the tone completely consistent and separated. "
+        "Write a detailed script, around 5 to 8 scenes. "
         "Output ONLY a valid JSON object with EXACTLY three keys:\n"
         "1. 'tags': An array of 20 highly optimized SEO tags for YouTube search (e.g. ['documentary', 'unsolved mystery', 'history']).\n"
-        "2. 'description': A detailed, highly engaging 2-to-3 paragraph English YouTube description for this documentary.\n"
+        "2. 'description': A detailed, highly engaging 2-to-3 paragraph English YouTube description for this documentary. (CRITICAL: Use '\\n' for newlines, do NOT press enter/use actual line breaks inside the string!)\n"
         "3. 'scenes': An array of scene objects. Each object must have exactly two keys:\n"
         "   - 'queries' (an array of 3 distinct 1-3 word English search terms for Pexels video search representing different camera angles/visuals for the scene, e.g. ['dark forest', 'full moon', 'creepy shadows'])\n"
-        "   - 'text' (the dramatic English voiceover script for that scene, roughly 3-5 sentences)\n"
+        "   - 'text' (The dramatic voiceover script for that scene in PERFECT, high-impact English. Make it extremely suspenseful and engaging. DO NOT just state boring facts. You MUST talk directly to the audience, ask them mysterious questions, and use cliffhangers! e.g., 'There is a legend in this dark forest... but do you guys know the terrifying truth behind it?').\n"
+        "CRITICAL TTS INSTRUCTION: You MUST use heavy punctuation! Use commas (,), ellipses (...), and periods (.) frequently to force dramatic pauses. This is for an AI voiceover, so punctuation acts as 'breathing room' to make it sound realistic.\n"
+        "CRITICAL JSON INSTRUCTION: Do NOT use double quotes (\") anywhere inside your text fields! If you need to quote a word or phrase, use single quotes (') instead. Unescaped double quotes will corrupt the JSON format.\n"
         "Do not include any other text, markdown formatting, or explanations outside the JSON object."
     )
     
@@ -156,14 +207,22 @@ def generate_script(topic):
         "model": "meta/llama-3.1-8b-instruct",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.9,
-        "max_tokens": 4096
+        "max_tokens": 4096,
+        "response_format": {"type": "json_object"}
     }
     
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response = requests.post(url, headers=headers, json=payload, timeout=120)
         response.raise_for_status()
         result = response.json()
-        content = result["choices"][0]["message"]["content"]
+        
+        if "choices" in result and len(result["choices"]) > 0:
+            content = result["choices"][0]["message"]["content"]
+        else:
+            print(f"Unexpected NIM Response format: {result}")
+            return [], "", []
+        
+        import re
         
         # Clean up potential markdown formatting
         content = content.strip()
@@ -171,7 +230,11 @@ def generate_script(topic):
         elif content.startswith("```"): content = content[3:]
         if content.endswith("```"): content = content[:-3]
         
-        data = json.loads(content.strip())
+        # Fix trailing commas (very common LLM mistake)
+        content = re.sub(r',\s*([\]}])', r'\1', content)
+        
+        # strict=False allows literal unescaped newlines/control characters in the JSON
+        data = json.loads(content.strip(), strict=False)
         scenes = data.get("scenes", [])
         desc = data.get("description", f"What is the real secret behind {topic}? Watch to find out.")
         if isinstance(desc, list):
@@ -184,14 +247,54 @@ def generate_script(topic):
         print(f"Error generating script: {e}")
         return [{"queries": ["dark ocean", "deep sea", "storm"], "text": "The script generation failed, but the depths remain dark."}], "Failed to generate description.", ["error", "documentary"]
 
-async def build_documentary():
-    topics = get_trending_topics()
-    main_topic = topics[0] if topics else ""
-    scenes, long_description, tags = generate_script(main_topic)
+def create_subtitle_clip(text, start, end, video_size=(1920, 1080)):
+    from PIL import Image, ImageDraw, ImageFont
+    import numpy as np
     
-    if not main_topic:
-        # If the AI invented a topic, just use the first tag as the title fallback
-        main_topic = tags[0].title() if tags else "Unsolved Mystery"
+    img = Image.new('RGBA', video_size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    
+    font_path = os.path.join(BASE_DIR, "Roboto-Medium.ttf")
+    if not os.path.exists(font_path):
+        import urllib.request
+        try:
+            urllib.request.urlretrieve("https://github.com/google/fonts/raw/main/ofl/roboto/Roboto-Medium.ttf", font_path)
+        except:
+            pass
+            
+    try:
+        font = ImageFont.truetype(font_path, 110) # Big bold text
+    except IOError:
+        font = ImageFont.load_default()
+        
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    
+    x = (video_size[0] - text_w) / 2
+    y = video_size[1] - text_h - 220 # Position at bottom
+    
+    # Draw thick black outline for visibility on bright/dark backgrounds
+    outline_color = (0, 0, 0, 255)
+    outline_width = 7
+    for dx in range(-outline_width, outline_width + 1):
+        for dy in range(-outline_width, outline_width + 1):
+            if dx*dx + dy*dy <= outline_width*outline_width:
+                draw.text((x + dx, y + dy), text, font=font, fill=outline_color)
+                
+    # Draw white text
+    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255))
+    
+    img_np = np.array(img)
+    clip = ImageClip(img_np).set_start(start).set_end(end)
+    return clip
+
+async def build_documentary():
+    # We no longer use Google Trends. We let the AI invent a fascinating topic based on the genres.
+    scenes, long_description, tags = generate_script(topic=None)
+    
+    # Use the first generated tag as the title fallback
+    main_topic = tags[0].title() if tags else "Unsolved Mystery"
     if not scenes: return
     
     video_clips = []
@@ -199,7 +302,7 @@ async def build_documentary():
     for i, scene in enumerate(scenes):
         print(f"\n--- Processing Scene {i+1} ---")
         
-        # 1. Download Videos (Multiple clips per scene for high-retention rapid editing)
+        # 1. Download Videos from Pexels (Multiple clips per scene)
         vid_paths = []
         queries = scene.get("queries", ["dark forest"])
         for j, query in enumerate(queries):
@@ -209,11 +312,14 @@ async def build_documentary():
                 if v_path: vid_paths.append(v_path)
                 
         if not vid_paths:
-            print(f"Warning: No videos found for scene {i+1}, skipping scene.")
+            print(f"Warning: No videos generated for scene {i+1}, skipping scene.")
             continue
             
         # 2. Generate Audio
         aud_path = await generate_tts(scene["text"], f"audio_{i}.mp3")
+        if not aud_path:
+            print(f"Failed to generate audio for scene {i+1}, skipping.")
+            continue
         aud_clip = AudioFileClip(aud_path)
         # Increase TTS volume slightly by 30% to make the voice punchier
         aud_clip = aud_clip.fx(afx.volumex, 1.3)
@@ -265,14 +371,50 @@ async def build_documentary():
             elif i % 3 == 0: hud_array = hud_generator.generate_highlight_hud(main_topic)
             else: hud_array = hud_generator.generate_main_hud(main_topic, i, len(scenes))
             
-        print("Overlaying dynamic python HUD...")
+        print("Overlaying dynamic python HUD and Subtitles...")
         hud_clip = ImageClip(hud_array).set_duration(scene_vid_clip.duration).resize(scene_vid_clip.size)
-        scene_vid_clip = CompositeVideoClip([scene_vid_clip, hud_clip])
+        
+        # Load Subtitles
+        timing_path = aud_path.replace(".mp3", "_timing.json")
+        subtitle_clips = []
+        if os.path.exists(timing_path):
+            try:
+                with open(timing_path, "r", encoding="utf-8") as f:
+                    words = json.load(f)
+                
+                chunk = []
+                chunk_start = 0
+                for w in words:
+                    if not chunk: chunk_start = w["start"]
+                    chunk.append(w["text"])
+                    # Group every 3 words or end of sentence to make it readable
+                    if len(chunk) >= 3 or w["text"].endswith(('.', ',', '?', '!')):
+                        chunk_text = " ".join(chunk)
+                        chunk_end = w["end"]
+                        # Extend slightly to prevent flickering, capped at scene duration
+                        chunk_end = min(chunk_end + 0.1, scene_vid_clip.duration)
+                        if chunk_start < scene_vid_clip.duration:
+                            sub_clip = create_subtitle_clip(chunk_text, chunk_start, chunk_end, scene_vid_clip.size)
+                            subtitle_clips.append(sub_clip)
+                        chunk = []
+                        
+                # Cleanup timing file
+                try: os.remove(timing_path)
+                except: pass
+            except Exception as e:
+                print(f"Failed to generate subtitles: {e}")
+                
+        composite_layers = [scene_vid_clip, hud_clip] + subtitle_clips
+        scene_vid_clip = CompositeVideoClip(composite_layers)
         
         scene_vid_clip = scene_vid_clip.set_audio(aud_clip)
         video_clips.append(scene_vid_clip)
         
     print("\nStitching final documentary...")
+    if not video_clips:
+        print("CRITICAL ERROR: No video clips were generated (Check your internet connection/API keys). Cannot stitch documentary.")
+        return
+        
     final_video = concatenate_videoclips(video_clips, method="compose")
     
     # 4. Add Background Music
@@ -342,12 +484,7 @@ async def build_documentary():
             try: os.remove(f_path)
             except Exception as e: print(f"Warning: could not delete {f_path}: {e}")
             
-    print("Deleting final rendered video...")
-    try: 
-        if os.path.exists(output_path):
-            os.remove(output_path)
-    except Exception as e: 
-        print(f"Warning: could not delete {output_path}: {e}")
+    # We will NOT delete the final rendered video so it can be viewed locally.
             
     print("Cleanup Complete! System is fully clean for GitHub Actions.")
 

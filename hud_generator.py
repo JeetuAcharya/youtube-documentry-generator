@@ -3,11 +3,27 @@ import numpy as np
 import datetime
 import random
 
+import os
+import urllib.request
+
+FONT_URL = "https://github.com/googlefonts/roboto/raw/main/src/hinted/Roboto-Medium.ttf"
+FONT_PATH = "Roboto-Medium.ttf"
+FONT_DOWNLOAD_ATTEMPTED = False
+
 def get_font(size):
+    global FONT_DOWNLOAD_ATTEMPTED
+    if not os.path.exists(FONT_PATH) and not FONT_DOWNLOAD_ATTEMPTED:
+        FONT_DOWNLOAD_ATTEMPTED = True
+        try:
+            print("Downloading standard font for cross-platform consistency...")
+            urllib.request.urlretrieve(FONT_URL, FONT_PATH)
+        except Exception as e:
+            print(f"Warning: Could not download font: {e}")
+            
     try:
-        # Try to load a nice clean font on Windows
-        return ImageFont.truetype("calibri.ttf", size)
-    except IOError:
+        return ImageFont.truetype(FONT_PATH, size)
+    except Exception:
+        # Ultimate fallback
         try:
             return ImageFont.truetype("arial.ttf", size)
         except IOError:
