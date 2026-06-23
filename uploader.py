@@ -43,6 +43,9 @@ def get_authenticated_service():
             if not os.path.exists(CLIENT_SECRETS_FILE):
                 raise FileNotFoundError(f"[ERROR] client_secrets.json not found at: {CLIENT_SECRETS_FILE}")
             
+            if os.environ.get("GITHUB_ACTIONS"):
+                raise Exception("\n[CRITICAL ERROR] YouTube Credentials have expired or are invalid! \nBecause this is running in GitHub Actions, a browser cannot be opened to re-authenticate. \nFix: Run this script locally on your PC to authenticate, open the newly generated 'credentials.json' file, and copy its contents into your GitHub 'YOUTUBE_CREDENTIALS' Secret.")
+                
             print("Launching browser flow for OAuth authentication...")
             flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRETS_FILE, SCOPES)
             creds = flow.run_local_server(port=0)

@@ -15,3 +15,5 @@ scratch/
 # Secrets (CRITICAL: Do not push these!)
 client_secrets.json
 credentials.json
+Apis.txt
+

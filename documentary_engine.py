@@ -27,8 +27,8 @@ os.makedirs(HUD_DIR, exist_ok=True)
 import hud_generator
 
 # API Keys (Loaded securely from environment variables)
-PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "quyE0ssaQW36uzc22XfO2VOGy7FS0vMctYY4mnb5tA90QixZrOkLo6G9")
-NVIDIA_NIM_API_KEY = os.environ.get("NVIDIA_NIM_API_KEY", "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")
+PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "")
+NVIDIA_NIM_API_KEY = os.environ.get("NVIDIA_NIM_API_KEY", "")
 
 def search_pexels_video(query):
     if PEXELS_API_KEY == "YOUR_PEXELS_KEY":
@@ -76,8 +76,8 @@ def download_video(url, filename):
                 time.sleep(10)
     return filepath
 
-NVIDIA_NIM_MAGPIE_API_KEY = "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"
-NVIDIA_NIM_CHATTERBOX_API_KEY = "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"
+NVIDIA_NIM_MAGPIE_API_KEY = os.environ.get("NVIDIA_NIM_MAGPIE_API_KEY", "")
+NVIDIA_NIM_CHATTERBOX_API_KEY = os.environ.get("NVIDIA_NIM_CHATTERBOX_API_KEY", "")
 
 async def generate_tts(text, filename):
     filepath = os.path.join(AUDIO_DIR, filename)
@@ -172,7 +172,7 @@ def get_trending_topics():
 def generate_script(topic):
     print(f"Generating unique documentary script via Nvidia NIM API (meta/llama-3.1-8b-instruct)...")
     url = "https://integrate.api.nvidia.com/v1/chat/completions"
-    nim_key = os.environ.get("NVIDIA_NIM_API_KEY", "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")
+    nim_key = os.environ.get("NVIDIA_NIM_API_KEY", "")
     if not nim_key:
         print("Warning: NVIDIA_NIM_API_KEY not found in environment. Attempting to proceed, but API call may fail.")
         
